@@ -377,13 +377,16 @@
     
     // Confirm logout
     function confirmLogout() {
+        // Set a flag to prevent any alerts during logout
+        window.isLoggingOut = true;
+        
         // Stop activity interval immediately before logout to prevent any more updates
         if (activityInterval) {
             clearInterval(activityInterval);
             activityInterval = null;
             console.log('Stopped activity updates before logout');
         }
-        // Redirect to logout handler which clears session
+        // Redirect to logout handler which will release counter assignment
         window.location.href = '../Logout.php';
     }
     
