@@ -914,6 +914,32 @@ function updateStatistics(stats) {
     
     // Auto-refresh queue data every 30 seconds
     setInterval(loadQueueData, 30000);
+    
+    // Release counter assignment when page unloads (browser close, tab close, navigation away)
+    window.addEventListener('beforeunload', function() {
+        // Use sendBeacon API to reliably send the request even when the page is unloading
+        // This ensures the counter assignment is released with released_at timestamp
+        const formData = new FormData();
+        formData.append('action', 'release_counter');
+        
+        // sendBeacon is specifically designed for sending data during page unload
+        // It returns true if the request was successfully queued, false otherwise
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon('queue_api.php', formData);
+        } else if (window.fetch) {
+            // Fallback to fetch with keepalive for browsers that don't support sendBeacon
+            // keepalive ensures the request continues even after the page unloads
+            try {
+                fetch('queue_api.php', {
+                    method: 'POST',
+                    body: formData,
+                    keepalive: true
+                });
+            } catch (e) {
+                console.error('Failed to release counter assignment:', e);
+            }
+        }
+    });
 </script>
 </body>
 </html>
