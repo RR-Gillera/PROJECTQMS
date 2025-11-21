@@ -22,8 +22,8 @@ if (isset($_SESSION['user']) && isset($_SESSION['user']['studentId'])) {
                 $clearActivityStmt->close();
             }
             
-            // Only release counter if user is a worker
-            if (strtolower($role) === 'working') {
+            // Release counter assignment for both Admin and Working roles
+            if (strtolower($role) === 'working' || strtolower($role) === 'admin') {
                 // Release counter assignment - pass integer StudentID
                 releaseCounterAssignment($conn, $studentIdInt);
             }
