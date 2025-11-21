@@ -30,7 +30,9 @@ $counterStmt = $conn->prepare("
     ORDER BY assigned_at DESC 
     LIMIT 1
 ");
-$counterStmt->bind_param("i", $studentId);
+// Convert to string since student_id is VARCHAR(50) in the database
+$studentIdStr = (string)$studentId;
+$counterStmt->bind_param("s", $studentIdStr);
 $counterStmt->execute();
 $counterResult = $counterStmt->get_result();
 if ($counterRow = $counterResult->fetch_assoc()) {

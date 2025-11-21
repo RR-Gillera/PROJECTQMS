@@ -264,6 +264,9 @@ function getNextQueueToServe($conn) {
 // Returns counter number (1-4) on success, false if all counters are occupied
 function assignCounterToWorker($conn, $studentId) {
     try {
+        // Convert to string since student_id is VARCHAR(50) in the database
+        $studentIdStr = (string)$studentId;
+        
         // First, check if this worker already has an active counter assignment
         $checkStmt = $conn->prepare("
             SELECT counter_number 
@@ -271,7 +274,7 @@ function assignCounterToWorker($conn, $studentId) {
             WHERE student_id = ? AND is_active = 1 
             LIMIT 1
         ");
-        $checkStmt->bind_param("i", $studentId);
+        $checkStmt->bind_param("s", $studentIdStr);
         $checkStmt->execute();
         $checkResult = $checkStmt->get_result();
         
@@ -305,7 +308,7 @@ function assignCounterToWorker($conn, $studentId) {
                     INSERT INTO counter_assignments (student_id, counter_number, assigned_at, is_active)
                     VALUES (?, ?, NOW(), 1)
                 ");
-                $assignStmt->bind_param("ii", $studentId, $counterNum);
+                $assignStmt->bind_param("si", $studentIdStr, $counterNum);
                 
                 if ($assignStmt->execute()) {
                     $assignStmt->close();
@@ -338,13 +341,9 @@ function releaseCounterAssignment($conn, $studentId) {
             WHERE student_id = ? AND is_active = 1
         ");
         
-        // Handle both string and integer student IDs
-        if (is_numeric($studentId)) {
-            $studentIdInt = (int)$studentId;
-            $releaseStmt->bind_param("i", $studentIdInt);
-        } else {
-            $releaseStmt->bind_param("s", $studentId);
-        }
+        // Always bind as string since student_id is VARCHAR(50) in the database
+        $studentIdStr = (string)$studentId;
+        $releaseStmt->bind_param("s", $studentIdStr);
         
         $releaseStmt->execute();
         $releaseStmt->close();
