@@ -540,6 +540,23 @@ try {
             echo json_encode(['success' => true, 'message' => 'Queue resumed']);
             break;
             
+        case 'release_counter':
+            // Release counter assignment when user closes browser or navigates away
+            // This endpoint is called via the beforeunload event
+            releaseCounterAssignment($conn, $studentId);
+            
+            // Clear LastActivity to mark user as offline
+            $studentIdInt = (int)$studentId;
+            $clearActivityStmt = $conn->prepare('UPDATE Accounts SET LastActivity = NULL WHERE StudentID = ?');
+            if ($clearActivityStmt) {
+                $clearActivityStmt->bind_param('i', $studentIdInt);
+                $clearActivityStmt->execute();
+                $clearActivityStmt->close();
+            }
+            
+            echo json_encode(['success' => true, 'message' => 'Counter released']);
+            break;
+            
         default:
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'Invalid action']);

@@ -1093,11 +1093,32 @@ echo 'DEBUG Counter: ' . ($_SESSION['user']['counterNumber'] ?? 'none') . '<br>'
         // Update activity every 2 minutes (120000 ms) while user is on the page
         activityInterval = setInterval(updateActivity, 120000);
         
-        // Stop interval before page unload
+        // Release counter assignment when page unloads (browser close, tab close, navigation away)
         window.addEventListener('beforeunload', function() {
             if (activityInterval) {
                 clearInterval(activityInterval);
                 activityInterval = null;
+            }
+            
+            // Use sendBeacon API to reliably send the request even when the page is unloading
+            // This ensures the counter assignment is released with released_at timestamp
+            const formData = new FormData();
+            formData.append('action', 'release_counter');
+            
+            // sendBeacon is specifically designed for sending data during page unload
+            // It returns true if the request was successfully queued, false otherwise
+            if (navigator.sendBeacon) {
+                navigator.sendBeacon('queue_api.php', formData);
+            } else {
+                // Fallback for older browsers (though sendBeacon is widely supported)
+                // Make a synchronous request as a last resort
+                try {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', 'queue_api.php', false); // false = synchronous
+                    xhr.send(formData);
+                } catch (e) {
+                    console.error('Failed to release counter assignment:', e);
+                }
             }
         });
     </script>
