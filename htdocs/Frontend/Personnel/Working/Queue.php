@@ -1109,13 +1109,15 @@ echo 'DEBUG Counter: ' . ($_SESSION['user']['counterNumber'] ?? 'none') . '<br>'
             // It returns true if the request was successfully queued, false otherwise
             if (navigator.sendBeacon) {
                 navigator.sendBeacon('queue_api.php', formData);
-            } else {
-                // Fallback for older browsers (though sendBeacon is widely supported)
-                // Make a synchronous request as a last resort
+            } else if (window.fetch) {
+                // Fallback to fetch with keepalive for browsers that don't support sendBeacon
+                // keepalive ensures the request continues even after the page unloads
                 try {
-                    const xhr = new XMLHttpRequest();
-                    xhr.open('POST', 'queue_api.php', false); // false = synchronous
-                    xhr.send(formData);
+                    fetch('queue_api.php', {
+                        method: 'POST',
+                        body: formData,
+                        keepalive: true
+                    });
                 } catch (e) {
                     console.error('Failed to release counter assignment:', e);
                 }

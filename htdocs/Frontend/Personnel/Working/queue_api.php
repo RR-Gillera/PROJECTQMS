@@ -543,6 +543,8 @@ try {
         case 'release_counter':
             // Release counter assignment when user closes browser or navigates away
             // This endpoint is called via the beforeunload event
+            // Note: $studentId is already validated at the top of this file (lines 14-18)
+            // where we check the session and ensure user is logged in with 'working' role
             releaseCounterAssignment($conn, $studentId);
             
             // Clear LastActivity to mark user as offline
