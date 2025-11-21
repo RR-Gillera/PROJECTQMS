@@ -62,9 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $updateStmt->close();
                         }
 
-                        // Assign counter to worker if role is 'Working'
+                        // Assign counter to both worker and admin
                         $counterNumber = null;
-                        if (strtolower($role) === 'working') {
+                        if (strtolower($role) === 'working' || strtolower($role) === 'admin') {
                             require_once __DIR__ . '/admin_functions.php';
                             // Use the actual StudentID from the row (int) to match DB type
                             $counterNumber = assignCounterToWorker($conn, (int)$row['StudentID']);
@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
 
                         // Only create session & redirect if login is allowed
-                        if (!($counterNumber === false && strtolower($role) === 'working')) {
+                        if (!($counterNumber === false && (strtolower($role) === 'working' || strtolower($role) === 'admin'))) {
                             $_SESSION['user'] = [
                                 'studentId'     => (string)$row['StudentID'],
                                 'fullName'      => $row['FullName'],

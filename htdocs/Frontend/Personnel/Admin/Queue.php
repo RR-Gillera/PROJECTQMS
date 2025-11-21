@@ -1,5 +1,10 @@
 <?php
-session_start();
+// Queue Management Dashboard for SeQueueR - Admin
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
+
+// DEBUG: show assigned counter number (remove after testing)
+echo 'DEBUG Counter: ' . ($_SESSION['user']['counterNumber'] ?? 'none') . '<br>';
+
 require_once __DIR__ . '/../../Student/db_config.php';
 require_once __DIR__ . '/../admin_functions.php';
 

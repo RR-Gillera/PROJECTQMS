@@ -18,10 +18,34 @@ if (!isset($_SESSION['user']) || strtolower($_SESSION['user']['role'] ?? '') !==
 }
 
 $studentId = $_SESSION['user']['studentId'];
-// Admin can manage all counters, so we don't require a specific counter assignment
-$counterNumber = 1; // Default counter for admin operations
 
 $conn = getDBConnection();
+
+// Get admin's counter assignment from counter_assignments table (similar to Working)
+$counterNumber = null;
+$counterStmt = $conn->prepare("
+    SELECT counter_number 
+    FROM counter_assignments 
+    WHERE student_id = ? AND is_active = 1 
+    ORDER BY assigned_at DESC 
+    LIMIT 1
+");
+$counterStmt->bind_param("i", $studentId);
+$counterStmt->execute();
+$counterResult = $counterStmt->get_result();
+if ($counterRow = $counterResult->fetch_assoc()) {
+    $counterNumber = $counterRow['counter_number'];
+}
+$counterStmt->close();
+
+// If admin doesn't have a counter assignment, they cannot manage queues
+if (!$counterNumber) {
+    http_response_code(400);
+    echo json_encode(['success' => false, 'error' => 'No counter assignment found. Please assign a counter first.']);
+    $conn->close();
+    exit;
+}
+
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 
 // Auto-cancel skipped queues that haven't been resumed after 1 hour
@@ -88,19 +112,21 @@ try {
 try {
     switch ($action) {
         case 'get_current_queue':
-            // Get current queue being served (admin can see any counter)
+            // Get current queue being served at this admin's assigned counter
             $stmt = $conn->prepare("
                 SELECT 
                     q.*,
                     GROUP_CONCAT(qs.service_name SEPARATOR ', ') as services
                 FROM queues q
                 LEFT JOIN queue_services qs ON q.id = qs.queue_id
-                WHERE q.status = 'serving'
+                WHERE q.counter_id = ?
+                AND q.status = 'serving'
                 AND DATE(q.created_at) = CURDATE()
                 GROUP BY q.id
                 ORDER BY q.served_at DESC
                 LIMIT 1
             ");
+            $stmt->bind_param("i", $counterNumber);
             $stmt->execute();
             $result = $stmt->get_result();
             $currentQueue = $result->fetch_assoc();
@@ -131,7 +157,7 @@ try {
             $waitingQueues = $waitingResult->fetch_all(MYSQLI_ASSOC);
             $waitingStmt->close();
             
-            // Get all stalled queues (admin can see all)
+            // Get stalled queues for this admin's counter
             $stalledStmt = $conn->prepare("
                 SELECT 
                     q.*,
@@ -139,17 +165,19 @@ try {
                     TIMESTAMPDIFF(MINUTE, q.created_at, NOW()) as wait_time_minutes
                 FROM queues q
                 LEFT JOIN queue_services qs ON q.id = qs.queue_id
-                WHERE q.status = 'stalled'
+                WHERE q.counter_id = ?
+                AND q.status = 'stalled'
                 AND DATE(q.created_at) = CURDATE()
                 GROUP BY q.id
                 ORDER BY q.created_at ASC
             ");
+            $stalledStmt->bind_param("i", $counterNumber);
             $stalledStmt->execute();
             $stalledResult = $stalledStmt->get_result();
             $stalledQueues = $stalledResult->fetch_all(MYSQLI_ASSOC);
             $stalledStmt->close();
             
-            // Get all skipped queues (admin can see all)
+            // Get skipped queues for this admin's counter
             $skippedStmt = $conn->prepare("
                 SELECT 
                     q.*,
@@ -157,17 +185,19 @@ try {
                     TIMESTAMPDIFF(MINUTE, q.created_at, NOW()) as wait_time_minutes
                 FROM queues q
                 LEFT JOIN queue_services qs ON q.id = qs.queue_id
-                WHERE q.status = 'skipped'
+                WHERE q.counter_id = ?
+                AND q.status = 'skipped'
                 AND DATE(q.created_at) = CURDATE()
                 GROUP BY q.id
                 ORDER BY q.created_at ASC
             ");
+            $skippedStmt->bind_param("i", $counterNumber);
             $skippedStmt->execute();
             $skippedResult = $skippedStmt->get_result();
             $skippedQueues = $skippedResult->fetch_all(MYSQLI_ASSOC);
             $skippedStmt->close();
             
-            // Get statistics for all queues (admin sees everything)
+            // Get statistics for this admin's counter
             $statsStmt = $conn->prepare("
                 SELECT 
                     COUNT(*) as total,
@@ -180,8 +210,10 @@ try {
                         ELSE NULL
                     END) as avg_service_time
                 FROM queues
-                WHERE DATE(created_at) = CURDATE()
+                WHERE counter_id = ?
+                AND DATE(created_at) = CURDATE()
             ");
+            $statsStmt->bind_param("i", $counterNumber);
             $statsStmt->execute();
             $statsResult = $statsStmt->get_result();
             $stats = $statsResult->fetch_assoc();
@@ -221,7 +253,7 @@ try {
             
         case 'next':
             // Call next queue without completing current one
-            // Reset any currently serving queue back to waiting
+            // Reset any currently serving queue at this counter back to waiting
             $resetStmt = $conn->prepare("
                 UPDATE queues 
                 SET status = 'waiting',
@@ -229,13 +261,15 @@ try {
                     served_at = NULL,
                     updated_at = NOW()
                 WHERE status = 'serving'
+                AND counter_id = ?
                 AND DATE(created_at) = CURDATE()
             ");
+            $resetStmt->bind_param("i", $counterNumber);
             $resetStmt->execute();
             $resetStmt->close();
 
-            // Get next queue (admin uses default counter logic)
-            $nextQueue = getNextQueueToServe($conn);
+            // Get next queue that matches this admin's counter type
+            $nextQueue = getNextQueueForCounter($conn, $counterNumber);
             if ($nextQueue) {
                 $nextStmt = $conn->prepare("
                     UPDATE queues 
@@ -250,7 +284,7 @@ try {
                 $nextStmt->execute();
                 $nextStmt->close();
 
-                logQueueAction($conn, $nextQueue['id'], 'serving', "Queue called by admin");
+                logQueueAction($conn, $nextQueue['id'], 'serving', "Queue called by admin at counter $counterNumber");
             }
 
             echo json_encode(['success' => true, 'message' => 'Next queue called']);
@@ -264,17 +298,18 @@ try {
                 throw new Exception('Queue ID is required');
             }
             
-            // Admin can complete any queue - just verify it exists
+            // Verify this queue belongs to this admin's counter
             $verifyStmt = $conn->prepare("
-                SELECT id FROM queues WHERE id = ?
+                SELECT id, counter_id FROM queues 
+                WHERE id = ? AND counter_id = ?
             ");
-            $verifyStmt->bind_param("i", $queueId);
+            $verifyStmt->bind_param("ii", $queueId, $counterNumber);
             $verifyStmt->execute();
             $verifyResult = $verifyStmt->get_result();
             
             if ($verifyResult->num_rows === 0) {
                 $verifyStmt->close();
-                throw new Exception('Queue not found');
+                throw new Exception('Queue not found or not assigned to this counter');
             }
             $verifyStmt->close();
             
@@ -290,10 +325,10 @@ try {
             $completeStmt->execute();
             $completeStmt->close();
             
-            logQueueAction($conn, $queueId, 'completed', "Completed by admin");
+            logQueueAction($conn, $queueId, 'completed', "Completed by admin at counter $counterNumber");
             
-            // Get next queue
-            $nextQueue = getNextQueueToServe($conn);
+            // Get next queue that matches this counter's type
+            $nextQueue = getNextQueueForCounter($conn, $counterNumber);
             if ($nextQueue) {
                 $nextStmt = $conn->prepare("
                     UPDATE queues 
@@ -308,7 +343,7 @@ try {
                 $nextStmt->execute();
                 $nextStmt->close();
                 
-                logQueueAction($conn, $nextQueue['id'], 'serving', "Now being served");
+                logQueueAction($conn, $nextQueue['id'], 'serving', "Now being served at counter $counterNumber");
             }
             
             echo json_encode(['success' => true, 'message' => 'Queue completed']);
@@ -322,17 +357,18 @@ try {
                 throw new Exception('Queue ID is required');
             }
             
-            // Admin can stall any queue - just verify it exists
+            // Verify this queue belongs to this admin's counter
             $verifyStmt = $conn->prepare("
-                SELECT id FROM queues WHERE id = ?
+                SELECT id, counter_id FROM queues 
+                WHERE id = ? AND counter_id = ?
             ");
-            $verifyStmt->bind_param("i", $queueId);
+            $verifyStmt->bind_param("ii", $queueId, $counterNumber);
             $verifyStmt->execute();
             $verifyResult = $verifyStmt->get_result();
             
             if ($verifyResult->num_rows === 0) {
                 $verifyStmt->close();
-                throw new Exception('Queue not found');
+                throw new Exception('Queue not found or not assigned to this counter');
             }
             $verifyStmt->close();
             
@@ -346,10 +382,10 @@ try {
             $stallStmt->execute();
             $stallStmt->close();
             
-            logQueueAction($conn, $queueId, 'stalled', "Stalled by admin");
+            logQueueAction($conn, $queueId, 'stalled', "Stalled by admin at counter $counterNumber");
             
-            // Get next queue
-            $nextQueue = getNextQueueToServe($conn);
+            // Get next queue that matches this counter's type
+            $nextQueue = getNextQueueForCounter($conn, $counterNumber);
             if ($nextQueue) {
                 $nextStmt = $conn->prepare("
                     UPDATE queues 
@@ -364,7 +400,7 @@ try {
                 $nextStmt->execute();
                 $nextStmt->close();
                 
-                logQueueAction($conn, $nextQueue['id'], 'serving', "Now being served");
+                logQueueAction($conn, $nextQueue['id'], 'serving', "Now being served at counter $counterNumber");
             }
             
             echo json_encode(['success' => true, 'message' => 'Queue stalled']);
@@ -378,17 +414,18 @@ try {
                 throw new Exception('Queue ID is required');
             }
             
-            // Admin can skip any queue - just verify it exists
+            // Verify this queue belongs to this admin's counter
             $verifyStmt = $conn->prepare("
-                SELECT id FROM queues WHERE id = ?
+                SELECT id, counter_id FROM queues 
+                WHERE id = ? AND counter_id = ?
             ");
-            $verifyStmt->bind_param("i", $queueId);
+            $verifyStmt->bind_param("ii", $queueId, $counterNumber);
             $verifyStmt->execute();
             $verifyResult = $verifyStmt->get_result();
             
             if ($verifyResult->num_rows === 0) {
                 $verifyStmt->close();
-                throw new Exception('Queue not found');
+                throw new Exception('Queue not found or not assigned to this counter');
             }
             $verifyStmt->close();
             
@@ -417,10 +454,10 @@ try {
             $skipStmt->execute();
             $skipStmt->close();
             
-            logQueueAction($conn, $queueId, 'skipped', "Skipped by admin");
+            logQueueAction($conn, $queueId, 'skipped', "Skipped by admin at counter $counterNumber");
             
-            // Get next queue
-            $nextQueue = getNextQueueToServe($conn);
+            // Get next queue that matches this counter's type
+            $nextQueue = getNextQueueForCounter($conn, $counterNumber);
             if ($nextQueue) {
                 $nextStmt = $conn->prepare("
                     UPDATE queues 
@@ -435,7 +472,7 @@ try {
                 $nextStmt->execute();
                 $nextStmt->close();
                 
-                logQueueAction($conn, $nextQueue['id'], 'serving', "Now being served");
+                logQueueAction($conn, $nextQueue['id'], 'serving', "Now being served at counter $counterNumber");
             }
             
             echo json_encode(['success' => true, 'message' => 'Queue skipped']);
@@ -449,12 +486,12 @@ try {
                 throw new Exception('Queue ID is required');
             }
             
-            // Verify this queue exists and is stalled or skipped
+            // Verify this queue belongs to this admin's counter and is stalled or skipped
             $verifyStmt = $conn->prepare("
-                SELECT id, status FROM queues 
-                WHERE id = ? AND (status = 'stalled' OR status = 'skipped')
+                SELECT id, counter_id, status FROM queues 
+                WHERE id = ? AND counter_id = ? AND (status = 'stalled' OR status = 'skipped')
             ");
-            $verifyStmt->bind_param("i", $queueId);
+            $verifyStmt->bind_param("ii", $queueId, $counterNumber);
             $verifyStmt->execute();
             $verifyResult = $verifyStmt->get_result();
             
@@ -464,11 +501,12 @@ try {
             }
             $verifyStmt->close();
             
-            // Check if there's already a queue being served
+            // Check if there's already a queue being served at this counter
             $currentStmt = $conn->prepare("
                 SELECT id FROM queues 
-                WHERE status = 'serving' AND DATE(created_at) = CURDATE()
+                WHERE counter_id = ? AND status = 'serving' AND DATE(created_at) = CURDATE()
             ");
+            $currentStmt->bind_param("i", $counterNumber);
             $currentStmt->execute();
             $currentResult = $currentStmt->get_result();
             
@@ -506,7 +544,7 @@ try {
             $resumeStmt->execute();
             $resumeStmt->close();
             
-            logQueueAction($conn, $queueId, 'resumed', "Resumed by admin");
+            logQueueAction($conn, $queueId, 'resumed', "Resumed by admin at counter $counterNumber");
             
             echo json_encode(['success' => true, 'message' => 'Queue resumed']);
             break;
