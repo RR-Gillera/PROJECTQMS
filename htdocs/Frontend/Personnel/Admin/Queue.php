@@ -587,17 +587,21 @@ function performQueueAction(action, queueId) {
     const buttons = document.querySelectorAll('button');
     buttons.forEach(btn => btn.disabled = true);
     
-    // Build the URL
-    let url = `queue_actions.php?action=${action}`;
+    // Prepare the request
+    const formData = new FormData();
+    formData.append('action', action);
     if (queueId) {
-        url += `&id=${queueId}`;
+        formData.append('queue_id', queueId);
     }
     
-    // Perform AJAX request with proper headers
+    // Use POST for actions, GET for fetching data
+    const method = (action === 'get_current_queue') ? 'GET' : 'POST';
+    const url = (action === 'get_current_queue') ? `queue_api.php?action=${action}` : 'queue_api.php';
+    
+    // Perform AJAX request
     fetch(url, {
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
+        method: method,
+        body: method === 'POST' ? formData : undefined
     })
         .then(response => response.json())
         .then(data => {
@@ -607,18 +611,20 @@ function performQueueAction(action, queueId) {
                     // For pause/resume, reload the page to update the session state
                     location.reload();
                 } else {
-                    updateAllQueueData();
+                    loadQueueData();
                 }
             } else {
                 // Error - show alert
-                alert('Error: ' + (data.error || 'Unknown error occurred'));
-                location.reload();
+                if (!window.isLoggingOut) {
+                    alert('Error: ' + (data.error || 'Unknown error occurred'));
+                }
             }
         })
         .catch(error => {
             console.error('Error:', error);
-            alert('Error performing queue action. Please try again.');
-            location.reload();
+            if (!window.isLoggingOut) {
+                alert('Error performing queue action. Please try again.');
+            }
         })
         .finally(() => {
             // Re-enable buttons after a short delay (only if not reloading)
@@ -630,287 +636,135 @@ function performQueueAction(action, queueId) {
         });
 }
 
-// Function to update all queue data after an action
-function updateAllQueueData() {
-    fetch('get_queue_data.php', {
-        method: 'GET',
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => response.json())
+// Load queue data from backend using queue_api.php
+function loadQueueData() {
+    fetch('queue_api.php?action=get_current_queue')
+        .then(response => {
+            // If unauthorized (401), just load empty data
+            if (response.status === 401) {
+                console.warn('Unauthorized (401) from queue_api.php, loading empty queue data');
+                loadEmptyData();
+                return null;
+            }
+            return response.json();
+        })
         .then(data => {
-            if (data.success) {
-                // UPDATE: Update the global pause state from the response
-                isPaused = data.isPaused;
-                
-                // UPDATE: Also update the currentQueueId from the response
-                if (data.currentQueue) {
-                    currentQueueId = data.currentQueue.id;
-                    queueCreatedAt = data.currentQueue.created_at;
-                } else {
-                    currentQueueId = null;
-                    queueCreatedAt = null;
-                }
-                
-                // Update current queue display if needed
-                if (data.currentQueue && data.currentQueueDetails) {
-                    updateCurrentQueueDisplay(data.currentQueue, data.currentQueueDetails, data.currentServices);
-                } else {
-                    // If no current queue, clear the display
-                    clearCurrentQueueDisplay();
-                }
-                
-                // Update queue lists
-                updateActiveQueue(data.activeQueues);
-                updateStalledQueue(data.stalledQueues);
-                updateSkippedQueue(data.skippedQueues);
-                updateQueueCounts(data.activeQueues, data.stalledQueues, data.skippedQueues);
-                
-                // Update button states based on pause state
-                updateButtonStates();
-                
-                // UPDATE: Also update the pause/resume button text and icon
-                updatePauseResumeButton();
+            if (data && data.success) {
+                updateCurrentQueue(data.currentQueue);
+                updateQueueList(data.waitingQueues || [], data.stalledQueues || [], data.skippedQueues || []);
+                updateStatistics(data.statistics);
+            } else {
+                loadEmptyData();
             }
         })
         .catch(error => {
-            console.error('Error updating queue data:', error);
-        });
-}
-    
-    // Function to update all queue data after an action
-function updateAllQueueData() {
-    // First update queue lists
-    updateQueueLists();
-    
-    // Then update the main content with fresh data
-    fetch('get_queue_data.php', {
-        headers: {
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Update global variables
-                isPaused = data.isPaused;
-                
-                // Update current queue information
-                if (data.currentQueue) {
-                    currentQueueId = data.currentQueue.id;
-                    // Update the main queue display
-                    updateCurrentQueueDisplay(data.currentQueue, data.currentQueueDetails, data.currentServices);
-                } else {
-                    currentQueueId = null;
-                    // Clear the display if no queue is serving
-                    clearCurrentQueueDisplay();
-                }
-                
-                // Update button states based on new data
-                updateButtonStates();
-                
-                // Update pause/resume button
-                updatePauseResumeButton();
-                
-                // Update the pulse animation dot
-                updatePulseAnimation();
-                
-                // Update queue counts in the right panel
-                updateQueueCounts(data.activeQueues, data.stalledQueues, data.skippedQueues);
-            }
-        })
-        .catch(error => {
-            console.error('Error updating main data:', error);
-            // Fallback: reload the page if update fails
-            setTimeout(() => {
-                location.reload();
-            }, 1000);
+            console.error('Error loading queue data:', error);
+            loadEmptyData();
         });
 }
 
-// Add this new function to update the pulse animation
-function updatePulseAnimation() {
-    const pulseDot = document.querySelector('.w-3.h-3.rounded-full');
-    if (pulseDot) {
-        if (currentQueueId && !isPaused) {
-            pulseDot.classList.remove('bg-gray-300');
-            pulseDot.classList.add('bg-green-500', 'pulse-animation');
-        } else if (currentQueueId && isPaused) {
-            pulseDot.classList.remove('bg-green-500', 'pulse-animation');
-            pulseDot.classList.add('bg-gray-300');
-        } else {
-            pulseDot.classList.remove('bg-green-500', 'pulse-animation');
-            pulseDot.classList.add('bg-gray-300');
+// Load empty data when no backend connection
+function loadEmptyData() {
+    const emptyData = {
+        currentQueue: null,
+        queueList: [],
+        statistics: {
+            avgServiceTime: "--",
+            completed: 0,
+            stalled: 0,
+            cancelled: 0
         }
-    }
+    };
+    
+    updateCurrentQueue(emptyData.currentQueue);
+    updateQueueList(emptyData.queueList, [], []);
+    updateStatistics(emptyData.statistics);
 }
 
-// Update the updateCurrentQueueDisplay function to be more robust
-function updateCurrentQueueDisplay(currentQueue, currentQueueDetails, currentServices) {
-    // Update the main queue number and status
-    const queueNumberElement = document.querySelector('.text-6xl.font-bold');
-    const queueStatusElement = document.querySelector('.flex.items-center.justify-center span');
-    const counterElement = document.querySelector('.mt-2.text-sm');
-    
-    if (queueNumberElement) {
-        queueNumberElement.textContent = currentQueue.queue_number;
-        queueNumberElement.className = 'text-6xl font-bold text-yellow-400 mb-3';
-    }
-    
-    if (queueStatusElement) {
-        queueStatusElement.textContent = isPaused ? 'Queue Paused' : 'Currently Serving';
-        queueStatusElement.className = isPaused ? 'text-gray-500 font-medium' : 'text-green-600 font-medium';
-    }
-    
-    if (counterElement) {
-        counterElement.textContent = `Counter ${currentQueue.window_number || '1'}`;
-    }
-    
-    // Update student information
-    updateStudentInfo(currentQueueDetails);
-    
-    // Update queue details
-    updateQueueDetails(currentQueueDetails);
-    
-    // Update services
-    updateServices(currentServices);
-    
-    // Update pulse animation
-    updatePulseAnimation();
-    
-    // Update the queue created time for wait time calculation
-    if (currentQueueDetails && currentQueueDetails.created_at) {
-        queueCreatedAt = currentQueueDetails.created_at;
-    }
-}
-
-// Update student information more reliably
-function updateStudentInfo(currentQueueDetails) {
-    if (!currentQueueDetails) return;
-    
-    // Find the student information section
-    const studentInfoSection = document.querySelector('.bg-white.border.border-gray-200.rounded-lg.p-6.shadow-sm');
-    if (studentInfoSection) {
-        // Update each field by finding the specific elements
-        const nameElement = studentInfoSection.querySelector('p.font-bold.text-gray-800.text-base');
-        if (nameElement) {
-            // Navigate to find the full name field
-            let currentElement = nameElement;
-            while (currentElement && !currentElement.previousElementSibling?.textContent?.includes('Full Name')) {
-                currentElement = currentElement.nextElementSibling?.querySelector('p.font-bold.text-gray-800.text-base');
-            }
-            if (currentElement) {
-                currentElement.textContent = currentQueueDetails.student_name || '--';
-            }
+// Update current queue display
+function updateCurrentQueue(queue) {
+    if (queue) {
+        currentQueueId = queue.id;
+        queueCreatedAt = queue.created_at;
+        
+        // Update queue number display
+        const queueNumberElement = document.getElementById('currentQueueNumber');
+        if (queueNumberElement) {
+            queueNumberElement.textContent = queue.queue_number || '--';
+            queueNumberElement.className = 'text-6xl font-bold text-yellow-400 mb-3';
         }
         
-        // More reliable way: update all fields by their labels
-        const allLabels = studentInfoSection.querySelectorAll('span.text-sm.text-gray-600');
-        allLabels.forEach(label => {
-            const valueElement = label.nextElementSibling;
-            if (valueElement && valueElement.classList.contains('font-bold')) {
-                switch(label.textContent.trim()) {
-                    case 'Full Name':
-                        valueElement.textContent = currentQueueDetails.student_name || '--';
-                        break;
-                    case 'Student ID':
-                        valueElement.textContent = currentQueueDetails.student_id || '--';
-                        break;
-                    case 'Course':
-                        valueElement.textContent = currentQueueDetails.course_program || '--';
-                        break;
-                    case 'Year Level':
-                        valueElement.textContent = currentQueueDetails.year_level || '--';
-                        break;
-                }
+        // Update student information
+        document.getElementById('studentName').textContent = queue.student_name || '--';
+        document.getElementById('studentId').textContent = queue.student_id || '--';
+        document.getElementById('studentCourse').textContent = queue.course_program || '--';
+        document.getElementById('studentYear').textContent = queue.year_level || '--';
+        document.getElementById('timeRequested').textContent = queue.time_requested || '--';
+        
+        // Update priority type
+        const priorityType = document.getElementById('priorityType');
+        if (priorityType) {
+            if (queue.queue_type === 'priority') {
+                priorityType.innerHTML = '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-yellow-200 text-gray-800"><i class="fas fa-star mr-2 text-black"></i>Priority</span>';
+            } else {
+                priorityType.innerHTML = '<span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-gray-200 text-gray-800">Regular</span>';
             }
-        });
+        }
+    } else {
+        // Clear display
+        currentQueueId = null;
+        queueCreatedAt = null;
+        const queueNumberElement = document.getElementById('currentQueueNumber');
+        if (queueNumberElement) {
+            queueNumberElement.textContent = '--';
+            queueNumberElement.className = 'text-6xl font-bold text-gray-300 mb-3';
+        }
+        
+        document.getElementById('studentName').textContent = '--';
+        document.getElementById('studentId').textContent = '--';
+        document.getElementById('studentCourse').textContent = '--';
+        document.getElementById('studentYear').textContent = '--';
+        document.getElementById('timeRequested').textContent = '--';
+        document.getElementById('totalWaitTime').textContent = '--';
     }
 }
 
-// Update queue details more reliably
-function updateQueueDetails(currentQueueDetails) {
-    if (!currentQueueDetails) return;
+// Update queue list
+function updateQueueList(waitingQueues, stalledQueues, skippedQueues) {
+    // Update counts
+    const totalCount = document.querySelector('.bg-blue-900.text-white.rounded-full.w-8.h-8');
+    const activeCount = document.querySelector('.bg-blue-900.text-white.rounded-full.w-6.h-6');
+    const stalledCount = document.querySelector('.bg-yellow-400.text-yellow-900.rounded-full.w-6.h-6');
+    const skippedCount = document.querySelector('.bg-red-500.text-white.rounded-full.w-6.h-6');
     
-    const queueDetailsSections = document.querySelectorAll('.bg-white.border.border-gray-200.rounded-lg.p-6.shadow-sm');
-    if (queueDetailsSections.length > 1) {
-        const queueDetailsSection = queueDetailsSections[1];
-        
-        // Update all fields by their labels
-        const allLabels = queueDetailsSection.querySelectorAll('span.text-sm.text-gray-600');
-        allLabels.forEach(label => {
-            const valueElement = label.nextElementSibling;
-            if (valueElement && valueElement.classList.contains('font-bold')) {
-                switch(label.textContent.trim()) {
-                    case 'Priority Type':
-                        // Handle priority type separately
-                        const priorityContainer = label.parentElement.querySelector('.inline-flex.items-center');
-                        if (priorityContainer) {
-                            if (currentQueueDetails.queue_type === 'priority') {
-                                priorityContainer.innerHTML = `
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-yellow-200 text-gray-800">
-                                        <i class="fas fa-star mr-2 text-black"></i>
-                                        Priority
-                                    </span>
-                                `;
-                            } else {
-                                priorityContainer.innerHTML = `
-                                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-bold bg-gray-200 text-gray-800">
-                                        Regular
-                                    </span>
-                                `;
-                            }
-                        }
-                        break;
-                    case 'Time Requested':
-                        try {
-                            const time = new Date(currentQueueDetails.created_at);
-                            const manilaTime = new Date(time.getTime() + (8 * 60 * 60 * 1000));
-                            valueElement.textContent = manilaTime.toLocaleTimeString('en-US', {
-                                hour: 'numeric',
-                                minute: '2-digit',
-                                hour12: true
-                            });
-                        } catch (e) {
-                            valueElement.textContent = '--';
-                        }
-                        break;
-                    case 'Total Wait Time':
-                        // This will be updated by the interval function
-                        break;
-                    case 'Current Time':
-                        // This will be updated by the interval function
-                        break;
-                }
-            }
-        });
+    const total = waitingQueues.length + stalledQueues.length + skippedQueues.length;
+    if (totalCount) totalCount.textContent = total;
+    if (activeCount) activeCount.textContent = waitingQueues.length;
+    if (stalledCount) stalledCount.textContent = stalledQueues.length;
+    if (skippedCount) skippedCount.textContent = skippedQueues.length;
+    
+    // Update active queue content
+    updateActiveQueue(waitingQueues);
+    
+    // Update stalled queue content
+    updateStalledQueue(stalledQueues);
+    
+    // Update skipped queue content
+    updateSkippedQueue(skippedQueues);
+}
+
+// Update statistics
+function updateStatistics(stats) {
+    const statElements = document.querySelectorAll('.bg-gray-50 .text-2xl.font-bold.text-gray-900');
+    
+    if (statElements.length >= 4) {
+        statElements[0].textContent = stats.avgServiceTime || '--';
+        statElements[1].textContent = stats.completed || 0;
+        statElements[2].textContent = stats.stalled || 0;
+        statElements[3].textContent = stats.cancelled || 0;
     }
 }
-    
-    // Function to update queue lists via AJAX
-    function updateQueueLists() {
-        fetch('get_queue_data.php')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Update active queue
-                    updateActiveQueue(data.activeQueues);
-                    
-                    // Update stalled queue
-                    updateStalledQueue(data.stalledQueues);
-                    
-                    // Update skipped queue
-                    updateSkippedQueue(data.skippedQueues);
-                    
-                    // Update queue counts
-                    updateQueueCounts(data.activeQueues, data.stalledQueues, data.skippedQueues);
-                }
-            })
-            .catch(error => {
-                console.error('Error updating queue data:', error);
-            });
-    }
+
     
     // Update active queue list
     function updateActiveQueue(queues) {
@@ -1042,14 +896,19 @@ function updateQueueDetails(currentQueueDetails) {
         }
     }
     
+    // Initialize the interface
+    document.addEventListener('DOMContentLoaded', function() {
+        loadQueueData();
+    });
+    
     // Initialize real-time updates
     updateCurrentTime();
     updateTotalWaitTime();
     setInterval(updateCurrentTime, 1000);
     setInterval(updateTotalWaitTime, 1000);
     
-    // Update queue lists every 5 seconds
-    setInterval(updateQueueLists, 5000);
+    // Auto-refresh queue data every 30 seconds
+    setInterval(loadQueueData, 30000);
 </script>
 </body>
 </html>
