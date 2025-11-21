@@ -110,18 +110,24 @@ $nextQueues = ['--', '--', '--', '--', '--', '--'];
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=0.4, minimum-scale=0.1, maximum-scale=5.0, user-scalable=yes" />
     <title>SeQueueR TV Board</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
     <style>
-        body { font-family: 'Poppins', sans-serif; }
-        .tv-counter-number {
-            font-size: 2.75rem;
+        body { 
+            font-family: 'Poppins', sans-serif;
+            width: 1920px;
+            margin: 0 auto;
+            transform-origin: top left;
         }
-        @media (min-width: 768px) {
-            .tv-counter-number {
-                font-size: 3.5rem;
+        .tv-counter-number {
+            font-size: 3.5rem;
+        }
+        @media (max-width: 768px) {
+            body {
+                transform: scale(0.5);
+                width: 1920px;
             }
         }
     </style>
@@ -130,60 +136,60 @@ $nextQueues = ['--', '--', '--', '--', '--', '--'];
     <?php include __DIR__ . '/TvHeader.php'; ?>
 
     <main class="flex-grow mt-8">
-        <div class="px-6 md:px-10 mx-16 md:mx-32 lg:mx-48 py-6 md:py-10">
-            <div class="flex flex-col lg:flex-row gap-6">
+        <div class="px-10 mx-32 py-10" style="max-width: 1920px;">
+            <div class="flex flex-row gap-6">
                 <!-- Left: Now Serving -->
-                <div class="lg:flex-[7]">
+                <div class="flex-[7]">
                     <div class="bg-blue-900 text-white rounded-2xl shadow-lg px-6 py-4 mb-6">
-                        <h2 class="text-center text-3xl md:text-4xl font-extrabold tracking-wider">NOW SERVING</h2>
+                        <h2 class="text-center text-4xl font-extrabold tracking-wider">NOW SERVING</h2>
                     </div>
 
                     <!-- Counter 1 -->
                     <div class="flex items-stretch gap-0 mb-9 rounded-2xl shadow-lg overflow-hidden">
                         <div class="bg-blue-900 text-white px-20 py-10 flex items-center justify-center">
-                            <span class="text-xl md:text-2xl font-extrabold tracking-wide">COUNTER 1</span>
+                            <span class="text-2xl font-extrabold tracking-wide">COUNTER 1</span>
                         </div>
                         <div class="flex-1 bg-white border-2 border-blue-900 rounded-r-2xl px-8 py-10 flex items-center justify-center">
-                            <span id="counter-1" class="text-gray-300 font-bold text-3xl md:text-4xl">--</span>
+                            <span id="counter-1" class="text-gray-300 font-bold text-4xl">--</span>
                         </div>
                     </div>
 
                     <!-- Counter 2 -->
                     <div class="flex items-stretch gap-0 mb-9 rounded-2xl shadow-lg overflow-hidden">
                         <div class="bg-blue-900 text-white px-20 py-10 flex items-center justify-center">
-                            <span class="text-xl md:text-2xl font-extrabold tracking-wide">COUNTER 2</span>
+                            <span class="text-2xl font-extrabold tracking-wide">COUNTER 2</span>
                         </div>
                         <div class="flex-1 bg-white border-2 border-blue-900 rounded-r-2xl px-8 py-10 flex items-center justify-center">
-                            <span id="counter-2" class="text-gray-300 font-bold text-3xl md:text-4xl">--</span>
+                            <span id="counter-2" class="text-gray-300 font-bold text-4xl">--</span>
                         </div>
                     </div>
 
                     <!-- Counter 3 -->
                     <div class="flex items-stretch gap-0 mb-9 rounded-2xl shadow-lg overflow-hidden">
                         <div class="bg-blue-900 text-white px-20 py-10 flex items-center justify-center">
-                            <span class="text-xl md:text-2xl font-extrabold tracking-wide">COUNTER 3</span>
+                            <span class="text-2xl font-extrabold tracking-wide">COUNTER 3</span>
                         </div>
                         <div class="flex-1 bg-white border-2 border-blue-900 rounded-r-2xl px-8 py-10 flex items-center justify-center">
-                            <span id="counter-3" class="text-gray-300 font-bold text-3xl md:text-4xl">--</span>
+                            <span id="counter-3" class="text-gray-300 font-bold text-4xl">--</span>
                         </div>
                     </div>
 
                     <!-- Counter 4 -->
                     <div class="flex items-stretch gap-0 mb-9 rounded-2xl shadow-lg overflow-hidden">
                         <div class="bg-blue-900 text-white px-20 py-10 flex items-center justify-center">
-                            <span class="text-xl md:text-2xl font-extrabold tracking-wide">COUNTER 4</span>
+                            <span class="text-2xl font-extrabold tracking-wide">COUNTER 4</span>
                         </div>
                         <div class="flex-1 bg-white border-2 border-blue-900 rounded-r-2xl px-8 py-10 flex items-center justify-center">
-                            <span id="counter-4" class="text-gray-300 font-bold text-3xl md:text-4xl">--</span>
+                            <span id="counter-4" class="text-gray-300 font-bold text-4xl">--</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- Right: Next in Queue -->
-                <aside class="lg:flex-[2.5] w-full self-stretch">
+                <aside class="flex-[2.5] w-full self-stretch">
                     <div class="rounded-2xl shadow-lg overflow-hidden w-full max-w-[280px] bg-white ml-auto h-[calc(100%-25px)] flex flex-col">
                         <div class="bg-blue-900 text-white px-5 py-4">
-                            <h3 class="text-2xl md:text-3xl font-extrabold tracking-wider text-center">NEXT IN QUEUE</h3>
+                            <h3 class="text-3xl font-extrabold tracking-wider text-center">NEXT IN QUEUE</h3>
                         </div>
                         <div class="p-6 space-y-5 flex-1">
                             <!-- Display next 6 queues -->
@@ -229,7 +235,7 @@ $nextQueues = ['--', '--', '--', '--', '--', '--'];
                             // Only update if different (prevent unnecessary DOM updates)
                             if (element.textContent !== displayText) {
                                 element.textContent = displayText;
-                                element.className = (queueNumber === '--') ? 'text-gray-300 font-bold text-3xl md:text-4xl' : 'text-blue-900 font-bold text-3xl md:text-4xl';
+                                element.className = (queueNumber === '--') ? 'text-gray-300 font-bold text-4xl' : 'text-blue-900 font-bold text-4xl';
                             }
                         }
                     }
